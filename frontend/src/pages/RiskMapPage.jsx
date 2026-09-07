@@ -73,6 +73,34 @@ const RiskMapPage = () => {
     return matchesSearch && matchesLevel && matchesState;
   });
 
+  // Automatically center map and select point when search query yields a specific result
+  useEffect(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query === '') return;
+
+    // Check if user searched for a specific state name
+    const matchingState = Object.keys(STATE_COORDINATES).find(
+      st => st.toLowerCase() === query && st !== 'ALL'
+    );
+
+    if (matchingState) {
+      setFilterState(matchingState);
+      setMapCenter(STATE_COORDINATES[matchingState].center);
+      setMapZoom(STATE_COORDINATES[matchingState].zoom);
+      return;
+    }
+
+    if (filteredPoints.length > 0) {
+      setMapCenter([filteredPoints[0].latitude, filteredPoints[0].longitude]);
+      if (filteredPoints.length === 1) {
+        setMapZoom(12);
+        setSelectedPoint(filteredPoints[0]);
+      } else {
+        setMapZoom(8);
+      }
+    }
+  }, [searchQuery]);
+
   const nerStates = ['ALL', 'Sikkim', 'Meghalaya', 'Arunachal Pradesh', 'Nagaland', 'Manipur', 'Mizoram', 'Assam', 'Tripura'];
 
   return (
@@ -102,9 +130,65 @@ const RiskMapPage = () => {
             <Search size={18} className={styles.searchIcon} />
             <input
               type="text"
-              placeholder="Search station, corridor, state..."
+              placeholder="Search any location... (Press Enter)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && searchQuery.trim() !== '') {
+                  try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+                    const data = await res.json();
+                    if (data && data.length > 0) {
+                      const lat = parseFloat(data[0].lat);
+                      const lng = parseFloat(data[0].lon);
+                      
+                      setMapCenter([lat, lng]);
+                      setMapZoom(12);
+                      
+                      setSelectedPoint({
+                        latitude: lat,
+                        longitude: lng,
+                        name: 'Analyzing Risk...',
+                        riskLevel: 'LOADING',
+                        probability: null,
+                        isCustom: true,
+                        isLoading: true
+                      });
+                      
+                      try {
+                        const pred = await api.getRiskPrediction(lat, lng);
+                        setSelectedPoint({
+                          latitude: lat,
+                          longitude: lng,
+                          name: data[0].display_name.split(',')[0],
+                          riskLevel: pred.riskLevel,
+                          probability: pred.probability,
+                          elevation_m: pred.features?.elevationM,
+                          slope_degrees: pred.features?.slopeDegrees,
+                          rainfall_7d: pred.features?.rainfall7d,
+                          soil_moisture: pred.features?.soilMoisture,
+                          isCustom: true,
+                          isLoading: false
+                        });
+                      } catch (err) {
+                        setSelectedPoint({
+                          latitude: lat,
+                          longitude: lng,
+                          name: 'Analysis Failed',
+                          riskLevel: 'UNKNOWN',
+                          probability: null,
+                          isCustom: true,
+                          isLoading: false
+                        });
+                      }
+                    } else {
+                      alert('Location not found. Try a different search term.');
+                    }
+                  } catch(err) {
+                    console.error("Geocoding failed", err);
+                  }
+                }
+              }}
             />
           </div>
 

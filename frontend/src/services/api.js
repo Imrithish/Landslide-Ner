@@ -209,5 +209,16 @@ export const api = {
         admin_notes: adminNotes
       })
     });
+  },
+
+  async dispatchTargetedAlert(payload) {
+    return fetchAPI('/notifications/targeted-dispatch', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getNotificationLogs(limit = 30) {
+    return fetchAPI(`/notifications/logs?limit=${limit}`);
   }
 };

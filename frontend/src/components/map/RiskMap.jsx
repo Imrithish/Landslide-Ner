@@ -10,12 +10,14 @@ import styles from './RiskMap.module.css';
 // Smooth Map Pan/Zoom Updater
 const MapCenterUpdater = ({ center, zoom }) => {
   const map = useMap();
+  const lat = center ? center[0] : null;
+  const lng = center ? center[1] : null;
+
   useEffect(() => {
-    if (center && center[0] && center[1]) {
-      map.setView(center, zoom || 7);
-      setTimeout(() => map.invalidateSize(), 150);
+    if (lat !== null && lng !== null) {
+      map.setView([lat, lng], zoom || 7);
     }
-  }, [center, zoom, map]);
+  }, [lat, lng, zoom, map]);
   return null;
 };
 
@@ -98,12 +100,16 @@ const RiskMap = ({
         style={{ height: '100%', width: '100%' }}
         className={styles.leafletContainer}
       >
-        {/* OpenStreetMap Base Tiles */}
+        {/* Fast Esri Base Tiles */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          attribution={
+            layers.satellite
+              ? '&copy; Google Maps'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }
           url={
             layers.satellite
-              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+              ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
               : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
           }
         />

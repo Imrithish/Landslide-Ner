@@ -74,7 +74,7 @@ const AuthorityDashboard = () => {
       const [reportsData, alertsData, logsData] = await Promise.all([
         api.getReports(selectedState ? { state: selectedState } : {}),
         api.getAlerts(selectedState ? { state: selectedState } : {}),
-        fetch('http://127.0.0.1:8000/api/v1/notifications/logs?limit=30').then(r => r.json()).catch(() => [])
+        api.getNotificationLogs(30).catch(() => [])
       ]);
       setReports(reportsData || []);
       setAlerts(alertsData || []);
@@ -115,18 +115,13 @@ const AuthorityDashboard = () => {
     e.preventDefault();
     setBroadcasting(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/notifications/targeted-dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          state: dispatchState,
-          area: dispatchArea,
-          risk_level: riskLevel,
-          probability: riskLevel === 'CRITICAL' ? 0.96 : (riskLevel === 'HIGH' ? 0.82 : 0.60),
-          custom_message: customMsg || undefined
-        })
+      const data = await api.dispatchTargetedAlert({
+        state: dispatchState,
+        area: dispatchArea,
+        risk_level: riskLevel,
+        probability: riskLevel === 'CRITICAL' ? 0.96 : (riskLevel === 'HIGH' ? 0.82 : 0.60),
+        custom_message: customMsg || undefined
       });
-      const data = await res.json();
 
       setIsModalOpen(false);
       await loadData();
@@ -562,7 +557,7 @@ const AuthorityDashboard = () => {
               icon={Send}
               loading={broadcasting}
             >
-              Broadcast Alert to {dispatchArea}
+              Send Alert
             </Button>
           </div>
         </form>
