@@ -57,8 +57,7 @@ class OpenMeteoMultiHazardProvider(RainfallProvider, TerrainProvider, SoilMoistu
                         return chunk_res
             except Exception as e:
                 logger.warning("Live batch rainfall query exception: %s", e)
-
-            return [{"rainfall_1d": 0.0, "rainfall_3d": 0.0, "rainfall_7d": 0.0} for _ in chunk_coords]
+                raise RuntimeError(f"Failed to fetch live batch data from Open-Meteo: {e}")
 
         chunks = [coords[i:i + CHUNK_SIZE] for i in range(0, len(coords), CHUNK_SIZE)]
         results_nested = await asyncio.gather(*[fetch_chunk(c) for c in chunks])
@@ -100,8 +99,7 @@ class OpenMeteoMultiHazardProvider(RainfallProvider, TerrainProvider, SoilMoistu
                         }
         except Exception as e:
             logger.warning("Live SRTM elevation query exception: %s", e)
-
-        return {"elevation_m": 856.38, "slope_degrees": 12.65}
+            raise RuntimeError(f"Failed to fetch live elevation from Open-Meteo: {e}")
 
     async def get_soil_moisture(self, latitude: float, longitude: float) -> Optional[float]:
         fc = await self.get_full_weather_forecast(latitude, longitude)
@@ -166,15 +164,7 @@ class OpenMeteoMultiHazardProvider(RainfallProvider, TerrainProvider, SoilMoistu
                 }
         except Exception as e:
             logger.warning("Live telemetry query exception: %s", e)
-
-        return {
-            "antecedent_rainfall": {"rainfall_1d": 0.0, "rainfall_3d": 0.0, "rainfall_7d": 0.0},
-            "past_daily_precip": [0.0] * 7,
-            "future_daily_precip": [0.0] * 7,
-            "future_dates": ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
-            "current_soil_moisture": 0.3418,
-            "river_discharge": [0.0] * 7
-        }
+            raise RuntimeError(f"Failed to fetch live data from Open-Meteo: {e}")
 
 
 multi_hazard_provider = OpenMeteoMultiHazardProvider()

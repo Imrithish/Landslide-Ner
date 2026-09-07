@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, CircleMarker, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { Layers, Navigation, Loader2 } from 'lucide-react';
 import { MapClickHandler } from './MapControls';
 import { getRiskColor } from '../../utils/riskUtils';
@@ -18,7 +19,6 @@ const MapCenterUpdater = ({ center, zoom }) => {
   return null;
 };
 
-// Smooth GPS FlyTo component
 const GpsFlyTo = ({ trigger, coords }) => {
   const map = useMap();
   useEffect(() => {
@@ -28,6 +28,19 @@ const GpsFlyTo = ({ trigger, coords }) => {
   }, [trigger, coords, map]);
   return null;
 };
+
+const customPinIcon = new L.divIcon({
+  className: 'custom-pin-icon',
+  html: `<div style="color: #dc2626; display: flex; justify-content: center; align-items: center;">
+           <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+             <circle cx="12" cy="10" r="3" fill="white"></circle>
+           </svg>
+         </div>`,
+  iconSize: [36, 36],
+  iconAnchor: [18, 36],
+  popupAnchor: [0, -36]
+});
 
 const RiskMap = ({
   selectedLocation,
@@ -128,17 +141,11 @@ const RiskMap = ({
           </CircleMarker>
         )}
 
-        {/* Selected Target Point (Red/Orange Dot) */}
+        {/* Selected Target Point (Location Pin) */}
         {selectedLocation && selectedLocation.lat && selectedLocation.lng && (
-          <CircleMarker
-            center={[selectedLocation.lat, selectedLocation.lng]}
-            radius={8}
-            pathOptions={{
-              color: '#ffffff',
-              weight: 2,
-              fillColor: '#dc2626',
-              fillOpacity: 1.0
-            }}
+          <Marker
+            position={[selectedLocation.lat, selectedLocation.lng]}
+            icon={customPinIcon}
           >
             <Popup>
               <div className={styles.popup}>
@@ -147,7 +154,7 @@ const RiskMap = ({
                 <p>Lng: {selectedLocation.lng.toFixed(4)}° E</p>
               </div>
             </Popup>
-          </CircleMarker>
+          </Marker>
         )}
 
         {/* Risk Zones & Stations — Clean GIS Circles & Risk Dots */}

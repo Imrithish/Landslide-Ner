@@ -121,6 +121,7 @@ export const api = {
     return zones.map(z => ({
       id: z.id,
       name: z.name,
+      state: z.state,
       latitude: z.latitude,
       longitude: z.longitude,
       elevation_m: z.elevation_m,

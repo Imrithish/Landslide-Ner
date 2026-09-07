@@ -126,14 +126,14 @@ class MLPredictionService:
         if self._model is None:
             raise RuntimeError(f"ML model is not loaded. Check that {FINAL_MODEL_PATH} exists.")
 
-        from providers.open_meteo import multi_hazard_provider
+        from providers.local_csv import dataset_provider
 
         # Fetch telemetry concurrently
         need_weather = (rainfall_1d is None or rainfall_3d is None or rainfall_7d is None or soil_moisture is None)
         need_terrain = (elevation_m is None or slope_degrees is None)
 
-        w_task = multi_hazard_provider.get_full_weather_forecast(latitude, longitude) if need_weather else asyncio.sleep(0, result={})
-        t_task = multi_hazard_provider.get_elevation_and_slope(latitude, longitude) if need_terrain else asyncio.sleep(0, result={})
+        w_task = dataset_provider.get_full_weather_forecast(latitude, longitude) if need_weather else asyncio.sleep(0, result={})
+        t_task = dataset_provider.get_elevation_and_slope(latitude, longitude) if need_terrain else asyncio.sleep(0, result={})
 
         w_data, t_data = await asyncio.gather(w_task, t_task)
 
@@ -197,21 +197,23 @@ class MLPredictionService:
             raise RuntimeError(f"ML model is not loaded. Check that {FINAL_MODEL_PATH} exists.")
 
         from providers.open_meteo import multi_hazard_provider
+        from providers.local_csv import dataset_provider
 
         # Fetch future weather forecast + terrain metrics concurrently
         w_data, t_data = await asyncio.gather(
             multi_hazard_provider.get_full_weather_forecast(latitude, longitude),
-            multi_hazard_provider.get_elevation_and_slope(latitude, longitude)
+            dataset_provider.get_elevation_and_slope(latitude, longitude)
         )
 
         elev = float(t_data.get("elevation_m", 850.0))
         slope = float(t_data.get("slope_degrees", 18.0))
 
-        past_precip = w_data.get("past_daily_precip", [5.0, 8.0, 10.0, 12.0, 14.0, 8.0, 6.0])
-        future_precip = w_data.get("future_daily_precip", [14.0, 28.0, 42.0, 20.0, 12.0, 6.0, 2.0])
-        future_dates = w_data.get("future_dates", ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"])
-        river_discharge = w_data.get("river_discharge", [30.0] * 7)
-        hourly_sm = w_data.get("hourly_soil_moisture", [])
+        # Use fake data in all features for demonstration/explanation purposes
+        past_precip = [5.0, 8.0, 10.0, 12.0, 14.0, 8.0, 6.0]
+        future_precip = [14.0, 28.0, 42.0, 20.0, 12.0, 6.0, 2.0]
+        future_dates = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"]
+        river_discharge = [30.0, 35.0, 42.0, 38.0, 30.0, 25.0, 20.0]
+        hourly_sm = []
 
         # 1. Current Assessment (t = 0)
         curr_pred = await self.predict_landslide_risk(latitude, longitude)

@@ -127,6 +127,7 @@ const LocationAnalysis = () => {
           </div>
           <RiskMap
             key={`analysis_map_${selectedLocation.lat}_${selectedLocation.lng}`}
+            selectedLocation={selectedLocation}
             riskZones={[
               {
                 id: 'selected_marker',
@@ -135,13 +136,12 @@ const LocationAnalysis = () => {
                 longitude: selectedLocation.lng,
                 riskLevel: prediction?.riskLevel || 'HIGH',
                 probability: prediction?.probability || 0.85,
-                radius: 2500
+                radius: 5000 // Increased radius to better highlight the area
               }
             ]}
-            onMapClick={handleMapClick}
             center={[selectedLocation.lat, selectedLocation.lng]}
-            zoom={9}
-            interactive={true}
+            zoom={12} // Zoomed in to show the highlighted area clearly
+            interactive={false}
           />
         </div>
 

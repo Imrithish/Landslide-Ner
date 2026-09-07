@@ -139,7 +139,45 @@ const RiskMapPage = () => {
         <div className={styles.mapContainer}>
           <RiskMap
             riskZones={filteredPoints}
+            selectedLocation={selectedPoint ? { lat: selectedPoint.latitude, lng: selectedPoint.longitude } : null}
             onZoneClick={(pt) => setSelectedPoint(pt)}
+            onMapClick={async (latlng) => {
+              setSelectedPoint({
+                latitude: latlng.lat,
+                longitude: latlng.lng,
+                name: 'Analyzing Risk...',
+                riskLevel: 'LOADING',
+                probability: null,
+                isCustom: true,
+                isLoading: true
+              });
+              try {
+                const pred = await api.getRiskPrediction(latlng.lat, latlng.lng);
+                setSelectedPoint({
+                  latitude: latlng.lat,
+                  longitude: latlng.lng,
+                  name: `Location (${latlng.lat.toFixed(2)}, ${latlng.lng.toFixed(2)})`,
+                  riskLevel: pred.riskLevel,
+                  probability: pred.probability,
+                  elevation_m: pred.features?.elevationM,
+                  slope_degrees: pred.features?.slopeDegrees,
+                  rainfall_7d: pred.features?.rainfall7d,
+                  soil_moisture: pred.features?.soilMoisture,
+                  isCustom: true,
+                  isLoading: false
+                });
+              } catch (err) {
+                setSelectedPoint({
+                  latitude: latlng.lat,
+                  longitude: latlng.lng,
+                  name: 'Analysis Failed',
+                  riskLevel: 'UNKNOWN',
+                  probability: null,
+                  isCustom: true,
+                  isLoading: false
+                });
+              }
+            }}
             center={mapCenter}
             zoom={mapZoom}
             height="620px"
@@ -158,21 +196,21 @@ const RiskMapPage = () => {
                 fontWeight: '800', 
                 padding: '0.2rem 0.5rem', 
                 borderRadius: '4px', 
-                background: (selectedPoint.probability || 0.8) >= 0.75 ? '#fee2e2' : (selectedPoint.probability || 0.8) >= 0.55 ? '#ffedd5' : (selectedPoint.probability || 0.8) >= 0.35 ? '#fef3c7' : '#ecfdf5', 
-                color: (selectedPoint.probability || 0.8) >= 0.75 ? '#b91c1c' : (selectedPoint.probability || 0.8) >= 0.55 ? '#ea580c' : (selectedPoint.probability || 0.8) >= 0.35 ? '#b45309' : '#047857', 
+                background: selectedPoint.isLoading ? '#e2e8f0' : ((selectedPoint.probability ?? 0.8) >= 0.75 ? '#fee2e2' : (selectedPoint.probability ?? 0.8) >= 0.55 ? '#ffedd5' : (selectedPoint.probability ?? 0.8) >= 0.35 ? '#fef3c7' : '#ecfdf5'), 
+                color: selectedPoint.isLoading ? '#475569' : ((selectedPoint.probability ?? 0.8) >= 0.75 ? '#b91c1c' : (selectedPoint.probability ?? 0.8) >= 0.55 ? '#ea580c' : (selectedPoint.probability ?? 0.8) >= 0.35 ? '#b45309' : '#047857'), 
                 display: 'inline-block', 
                 marginBottom: '0.6rem' 
               }}>
-                {selectedPoint.riskLevel || selectedPoint.risk_level || 'HIGH'} ({Math.round((selectedPoint.probability || selectedPoint.risk_probability || 0.8) * 100)}% Probability)
+                {selectedPoint.isLoading ? 'Analyzing Risk...' : `${selectedPoint.riskLevel || selectedPoint.risk_level || 'HIGH'} (${Math.round((selectedPoint.probability ?? selectedPoint.risk_probability ?? 0.8) * 100)}% Probability)`}
               </div>
 
               <div className={styles.coords}>
                 <div><span>Latitude:</span> {selectedPoint.latitude?.toFixed(4)}° N</div>
                 <div><span>Longitude:</span> {selectedPoint.longitude?.toFixed(4)}° E</div>
-                {selectedPoint.elevation_m && <div><span>Elevation:</span> {selectedPoint.elevation_m} m</div>}
-                {selectedPoint.slope_degrees && <div><span>Slope Angle:</span> {selectedPoint.slope_degrees}°</div>}
-                {selectedPoint.rainfall_7d && <div><span>7-Day Rain:</span> {selectedPoint.rainfall_7d} mm</div>}
-                {selectedPoint.soil_moisture && <div><span>Soil Moisture:</span> {Math.round(selectedPoint.soil_moisture * 100)}% Saturation</div>}
+                {selectedPoint.elevation_m != null && <div><span>Elevation:</span> {selectedPoint.elevation_m} m</div>}
+                {selectedPoint.slope_degrees != null && <div><span>Slope Angle:</span> {selectedPoint.slope_degrees}°</div>}
+                {selectedPoint.rainfall_7d != null && <div><span>7-Day Rain:</span> {selectedPoint.rainfall_7d} mm</div>}
+                {selectedPoint.soil_moisture != null && <div><span>Soil Moisture:</span> {Math.round(selectedPoint.soil_moisture * 100)}% Saturation</div>}
                 <div><span>Last Updated:</span> Live Telemetry</div>
               </div>
 
