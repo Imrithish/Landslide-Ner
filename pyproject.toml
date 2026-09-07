@@ -2,6 +2,24 @@
 name = "ner-landslide-early-warning"
 version = "0.1.0"
 requires-python = ">=3.9"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "httpx",
+    "scikit-learn",
+    "joblib",
+    "numpy",
+    "mysql-connector-python",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "bcrypt",
+    "python-multipart",
+    "aiofiles",
+    "requests",
+]
 
 [tool.vercel]
 entrypoint = "backend.main:app"
