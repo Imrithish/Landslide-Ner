@@ -24,12 +24,114 @@ async def predict_landslide_risk(location: LocationRequest):
             slope_degrees=location.slope_degrees,
             soil_moisture=location.soil_moisture,
         )
+
+        # Persist prediction in MySQL if available
+        import database
+        if database._pool is not None:
+            try:
+                with database.get_db() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO predictions (
+                            prediction_id, latitude, longitude, risk_level, probability, confidence,
+                            rainfall_1d, rainfall_3d, rainfall_7d, elevation_m, slope_degrees, soil_moisture,
+                            explanation, model_name, model_version, created_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        """,
+                        (
+                            prediction.prediction_id,
+                            prediction.latitude,
+                            prediction.longitude,
+                            prediction.risk_level,
+                            prediction.probability,
+                            prediction.confidence,
+                            prediction.features.rainfall_1d,
+                            prediction.features.rainfall_3d,
+                            prediction.features.rainfall_7d,
+                            prediction.features.elevation_m,
+                            prediction.features.slope_degrees,
+                            prediction.features.soil_moisture,
+                            prediction.explanation,
+                            prediction.model_name,
+                            prediction.model_version,
+                        )
+                    )
+            except Exception as db_err:
+                logger.warning("Could not persist prediction to database: %s", db_err)
+
         return prediction
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error("Prediction failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@router.get("/predictions/history")
+async def get_prediction_history(
+    limit: int = Query(20, ge=1, le=100),
+    risk_level: Optional[str] = Query(None, description="Filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
+):
+    """Get recent prediction history from database."""
+    import database
+    if database._pool is None:
+        return {"total": 0, "history": []}
+
+    try:
+        with database.get_db() as cur:
+            if risk_level:
+                cur.execute(
+                    """
+                    SELECT prediction_id, latitude, longitude, risk_level, probability, confidence,
+                           rainfall_1d, rainfall_3d, rainfall_7d, elevation_m, slope_degrees, soil_moisture,
+                           explanation, model_name, model_version, created_at
+                    FROM predictions
+                    WHERE risk_level = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (risk_level.upper(), limit)
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT prediction_id, latitude, longitude, risk_level, probability, confidence,
+                           rainfall_1d, rainfall_3d, rainfall_7d, elevation_m, slope_degrees, soil_moisture,
+                           explanation, model_name, model_version, created_at
+                    FROM predictions
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,)
+                )
+            rows = cur.fetchall()
+
+        history = []
+        for r in rows:
+            history.append({
+                "prediction_id": r["prediction_id"],
+                "latitude": float(r["latitude"]),
+                "longitude": float(r["longitude"]),
+                "risk_level": r["risk_level"],
+                "probability": float(r["probability"]),
+                "confidence": float(r["confidence"]),
+                "features": {
+                    "rainfall_1d": float(r["rainfall_1d"]) if r.get("rainfall_1d") is not None else None,
+                    "rainfall_3d": float(r["rainfall_3d"]) if r.get("rainfall_3d") is not None else None,
+                    "rainfall_7d": float(r["rainfall_7d"]) if r.get("rainfall_7d") is not None else None,
+                    "elevation_m": float(r["elevation_m"]) if r.get("elevation_m") is not None else None,
+                    "slope_degrees": float(r["slope_degrees"]) if r.get("slope_degrees") is not None else None,
+                    "soil_moisture": float(r["soil_moisture"]) if r.get("soil_moisture") is not None else None,
+                },
+                "explanation": r.get("explanation", ""),
+                "model_name": r.get("model_name", "landslide-rf-final"),
+                "model_version": r.get("model_version", "1.0.0"),
+                "created_at": r["created_at"].isoformat() + "Z" if hasattr(r["created_at"], "isoformat") else str(r["created_at"])
+            })
+        return {"total": len(history), "history": history}
+    except Exception as exc:
+        logger.error("Failed to fetch prediction history: %s", exc)
+        return {"total": 0, "history": []}
 
 
 @router.post("/predictions/multi-hazard-forecast", response_model=MultiHazardForecastResponse)

@@ -28,6 +28,13 @@ class UserResponse(BaseModel):
     created_at: str
 
 
+class UserUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    state: Optional[str] = None
+    district: Optional[str] = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
