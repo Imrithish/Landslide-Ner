@@ -1,2 +1,7 @@
+[project]
+name = "ner-landslide-early-warning"
+version = "0.1.0"
+requires-python = ">=3.9"
+
 [tool.vercel]
 entrypoint = "backend.main:app"
