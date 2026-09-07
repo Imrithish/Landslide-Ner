@@ -58,8 +58,11 @@ app.add_middleware(
 )
 
 UPLOAD_DIR = _backend_dir / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+try:
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+except OSError:
+    pass
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(prediction_router, prefix="/api/v1")
