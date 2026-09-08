@@ -6,6 +6,7 @@ Supports TextBee Gateway (https://textbee.dev), SMTP Email, and Console Simulato
 import os
 import hashlib
 import logging
+import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -14,6 +15,39 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+TEXTBEE_API_BASE_URL = "https://api.textbee.dev"
+INDIAN_PHONE_PATTERN = re.compile(r"^[6-9]\d{9}$")
+
+
+def normalize_indian_phone_number(phone_number: str) -> str:
+    """Return an Indian number in E.164 form or raise ValueError."""
+    if not isinstance(phone_number, str):
+        raise ValueError("Phone number must be a string")
+
+    compact = re.sub(r"[\s().-]", "", phone_number.strip())
+    if compact.startswith("+91"):
+        national_number = compact[3:]
+    elif compact.startswith("91") and len(compact) == 12:
+        national_number = compact[2:]
+    elif len(compact) == 10:
+        national_number = compact
+    else:
+        raise ValueError("Indian phone number must be a 10-digit mobile number")
+
+    if not INDIAN_PHONE_PATTERN.fullmatch(national_number):
+        raise ValueError("Indian phone number must start with 6, 7, 8, or 9")
+    return f"+91{national_number}"
+
+
+def _sanitize_provider_detail(detail: Any) -> str:
+    if isinstance(detail, dict):
+        safe_detail = {
+            key: value for key, value in detail.items()
+            if key.lower() not in {"token", "api_key", "apikey", "authorization", "x-api-key"}
+        }
+        return str(safe_detail)[:500]
+    return str(detail)[:500]
 
 
 # -------------------------------------------------------------
@@ -35,54 +69,75 @@ class TextBeeSMSProvider(SMSProvider):
         self.device_id = device_id
 
     async def send_sms(self, phone_number: str, message: str) -> Dict[str, Any]:
-        clean_number = "".join(filter(lambda c: c.isdigit() or c == '+', phone_number.strip()))
-        if not clean_number.startswith("+"):
-            if len(clean_number) == 10:
-                clean_number = f"+91{clean_number}"
-            else:
-                clean_number = f"+{clean_number}"
+        try:
+            clean_number = normalize_indian_phone_number(phone_number)
+        except ValueError as exc:
+            logger.warning("TextBee request rejected: invalid phone number")
+            return {"success": False, "provider": "textbee", "error_code": "INVALID_PHONE_NUMBER", "error": str(exc)}
 
-        url = f"https://api.textbee.dev/api/v1/gateway/devices/{self.device_id}/send-sms"
+        url = f"{TEXTBEE_API_BASE_URL}/api/v1/gateway/send-sms"
         headers = {
             "x-api-key": self.api_key,
             "Content-Type": "application/json"
         }
         payload = {
             "recipients": [clean_number],
-            "message": message
+            "message": message,
+            "deviceId": self.device_id,
         }
 
         try:
+            logger.info("TextBee request started")
             async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(url, headers=headers, json=payload)
-                res_json = response.json() if response.headers.get("content-type", "").startswith("application/json") else {"text": response.text}
-                
-                # Check response format: HTTP 200/201 and data.success == True
-                is_ok = response.status_code in (200, 201, 202)
-                data_obj = res_json.get("data", {}) if isinstance(res_json, dict) else {}
-                success_flag = res_json.get("success") or data_obj.get("success") or ("smsBatchId" in str(res_json))
+                logger.info("TextBee response status: %s", response.status_code)
+                try:
+                    res_json = response.json()
+                except ValueError:
+                    res_json = {"text": response.text[:500]}
 
-                if is_ok and success_flag:
-                    batch_id = data_obj.get("smsBatchId") or res_json.get("smsBatchId") or "queued"
-                    logger.info("[TEXTBEE SMS DELIVERED] To: %s | Batch ID: %s", clean_number, batch_id)
+                data_obj = res_json.get("data", {}) if isinstance(res_json, dict) else {}
+                if response.status_code == 200 and isinstance(data_obj, dict) and data_obj.get("success") is True:
+                    batch_id = data_obj.get("smsBatchId") or "queued"
+                    logger.info("TextBee SMS accepted for %s", clean_number)
                     return {
                         "success": True,
                         "provider": "textbee",
                         "batch_id": batch_id,
-                        "status": "DELIVERED"
+                        "status": "ACCEPTED",
                     }
-                else:
-                    logger.warning("[TEXTBEE SMS FAILED] %s: %s", clean_number, res_json)
-                    return {"success": False, "provider": "textbee", "error": res_json}
-        except Exception as e:
-            logger.error("[TEXTBEE SMS EXCEPTION] %s", e)
-            return {"success": False, "provider": "textbee", "error": str(e)}
+                detail = _sanitize_provider_detail(res_json)
+                logger.warning("TextBee provider error status=%s detail=%s", response.status_code, detail)
+                return {
+                    "success": False,
+                    "provider": "textbee",
+                    "error_code": "PROVIDER_ERROR",
+                    "http_status": response.status_code,
+                    "error": detail,
+                }
+        except httpx.TimeoutException:
+            logger.error("TextBee request timed out")
+            return {"success": False, "provider": "textbee", "error_code": "TIMEOUT", "error": "TextBee request timed out"}
+        except httpx.RequestError as exc:
+            logger.error("TextBee network error: %s", type(exc).__name__)
+            return {"success": False, "provider": "textbee", "error_code": "NETWORK_ERROR", "error": "TextBee network request failed"}
 
 
 class ConsoleSMSProvider(SMSProvider):
     async def send_sms(self, phone_number: str, message: str) -> Dict[str, Any]:
         logger.info("[SIMULATED SMS] To: %s | Message: %s", phone_number, message)
         return {"success": True, "provider": "console_sms", "status": "DELIVERED"}
+
+
+class UnconfiguredSMSProvider(SMSProvider):
+    async def send_sms(self, phone_number: str, message: str) -> Dict[str, Any]:
+        logger.error("TextBee SMS is not configured")
+        return {
+            "success": False,
+            "provider": "textbee",
+            "error_code": "MISSING_CONFIGURATION",
+            "error": "TextBee credentials are not configured",
+        }
 
 
 # -------------------------------------------------------------
@@ -141,10 +196,11 @@ def get_notification_gateways():
     textbee_device = os.getenv("TEXTBEE_DEVICE_ID")
 
     if textbee_key and textbee_device and textbee_key.strip() and textbee_device.strip():
-        logger.info("Using TextBee SMS Gateway (Device: %s)", textbee_device.strip()[:8])
+        logger.info("Using TextBee SMS Gateway")
         sms_gate = TextBeeSMSProvider(api_key=textbee_key.strip(), device_id=textbee_device.strip())
     else:
-        sms_gate = ConsoleSMSProvider()
+        logger.error("TextBee SMS credentials are missing; SMS sending is disabled")
+        sms_gate = UnconfiguredSMSProvider()
 
     smtp_host = os.getenv("SMTP_HOST")
     smtp_user = os.getenv("SMTP_USER")

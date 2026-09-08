@@ -1,33 +1,25 @@
-import os
-import sys
 import asyncio
-import httpx
+import os
+from pathlib import Path
 
-api_key = "txb_lsIM6PBLPH0A3Olz6a66ID1rDHugqBBa"
-device_id = "6a9d535bccb6c72709b03d60"
-phone_number = "+918778339906"
-message = "GOVT DISASTER ALERT: [CRITICAL RISK (94%)] Landslide threat detected at Gangtok (NH-10 Highway Corridor), Sikkim. Immediate evacuation advised."
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+from providers.notifications import TextBeeSMSProvider
+
 
 async def test_textbee():
-    print(f"Testing TextBee Gateway for Device: {device_id}...")
+    api_key = os.getenv("TEXTBEE_API_KEY", "")
+    device_id = os.getenv("TEXTBEE_DEVICE_ID", "")
+    phone_number = os.getenv("TEXTBEE_TEST_PHONE", "")
+    message = "TextBee connectivity test from NER Landslide Early Warning."
 
-    url = f"https://api.textbee.dev/api/v1/gateway/devices/{device_id}/send-sms"
-    headers = {
-        "x-api-key": api_key,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "recipients": [phone_number],
-        "message": message
-    }
+    if not api_key or not device_id or not phone_number:
+        raise RuntimeError("Set TextBee credentials and TEXTBEE_TEST_PHONE before running this live test")
+    result = await TextBeeSMSProvider(api_key, device_id).send_sms(phone_number, message)
+    print({"success": result.get("success"), "provider": result.get("provider"), "status": result.get("status"), "error_code": result.get("error_code"), "http_status": result.get("http_status")})
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            print("Status Code:", resp.status_code)
-            print("Response:", resp.text)
-    except Exception as e:
-        print("Exception:", e)
 
 if __name__ == "__main__":
     asyncio.run(test_textbee())

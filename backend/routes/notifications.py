@@ -9,6 +9,14 @@ from data.ner_locations import NER_MONITORED_LOCATIONS
 
 router = APIRouter()
 
+TARGET_ALERT_NUMBERS = (
+    "+919176456494",
+    "+918940627897",
+    "+917338761573",
+    "+918939731732",
+    "+919094686461",
+)
+
 
 class TargetedDispatchModalRequest(BaseModel):
     state: str = Field(..., description="Target NER State (e.g. Sikkim, Meghalaya, etc.)")
@@ -54,49 +62,43 @@ async def authority_targeted_emergency_dispatch(
     """
     import database
 
-    if database._pool is None:
-        target_recipients = []
-        for i, num in enumerate(["+919176456494", "+918940627897", "+917338761573", "+919094686461", "+918939731732", "+918778339906"]):
-            target_recipients.append({
-                "id": 1000 + i,
-                "full_name": f"Test User {i+1}",
-                "phone_number": num,
-                "email": f"test{i+1}@example.com",
-                "role": "AUTHORITY",
-                "state": req.state,
-                "district": req.area
-            })
-    else:
-        target_recipients = []
-        with database.get_db() as cur:
-            cur.execute(
-                """
-                SELECT id, full_name, phone_number, email, role, state, district 
-                FROM users 
-                WHERE is_active = TRUE 
-                  AND (LOWER(state) = LOWER(%s) OR role IN ('ADMIN', 'AUTHORITY'))
-                ORDER BY id ASC
-                """,
-                (req.state,)
-            )
-            raw_recipients = cur.fetchall()
-            
-            seen_numbers = set()
-            for r in raw_recipients:
-                num = r.get("phone_number")
-                if num and num not in seen_numbers:
-                    seen_numbers.add(num)
-                    target_recipients.append(r)
-
-    if not target_recipients:
+    if req.risk_level.upper() not in ("HIGH", "CRITICAL"):
         raise HTTPException(
-            status_code=404,
-            detail=f"No active registered citizens or field responders found for state: {req.state}."
+            status_code=400,
+            detail="SMS dispatch is only available for HIGH or CRITICAL landslide alerts.",
         )
 
-    prob_pct = int(req.probability * 100)
     location_label = f"{req.area}, {req.state}"
-    
+    dedup_hash = notification_service.generate_dedup_hash(location_label, req.risk_level)
+    if database._pool is not None:
+        with database.get_db() as cur:
+            cur.execute(
+                "SELECT id FROM notification_logs WHERE dedup_hash = %s AND created_at > DATE_SUB(NOW(), INTERVAL 60 MINUTE) LIMIT 1",
+                (dedup_hash,),
+            )
+            if cur.fetchone():
+                return {
+                    "success": True,
+                    "status": "DEDUPLICATED",
+                    "state": req.state,
+                    "area": req.area,
+                    "risk_level": req.risk_level,
+                    "sms_delivered": 0,
+                }
+
+    target_recipients = [
+        {
+            "id": index,
+            "full_name": "Configured emergency recipient",
+            "phone_number": phone,
+            "role": "AUTHORITY",
+            "state": req.state,
+            "district": req.area,
+        }
+        for index, phone in enumerate(TARGET_ALERT_NUMBERS, start=1)
+    ]
+
+    prob_pct = int(req.probability * 100)
     default_msg = (
         f"GOVT DISASTER ALERT: [{req.risk_level.upper()} RISK ({prob_pct}%)] "
         f"Imminent landslide hazard detected at {location_label}. "
@@ -105,6 +107,8 @@ async def authority_targeted_emergency_dispatch(
     final_sms_text = req.custom_message.strip() if req.custom_message and req.custom_message.strip() else default_msg
 
     sent_count = 0
+    failed_count = 0
+    failure_codes = set()
     dispatched_list = []
 
     for r in target_recipients:
@@ -116,25 +120,32 @@ async def authority_targeted_emergency_dispatch(
         if sms_res.get("success"):
             sent_count += 1
             dispatched_list.append(phone)
+        else:
+            failed_count += 1
+            if sms_res.get("error_code"):
+                failure_codes.add(sms_res["error_code"])
 
         if database._pool is not None:
             with database.get_db() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notification_logs (alert_id, channel, recipient, recipient_role, message, status, created_at)
-                    VALUES (NULL, 'SMS', %s, %s, %s, %s, NOW())
+                    INSERT INTO notification_logs (alert_id, channel, recipient, recipient_role, message, status, dedup_hash, created_at)
+                    VALUES (NULL, 'SMS', %s, %s, %s, %s, %s, NOW())
                     """,
-                    (phone, r.get("role", "CITIZEN"), final_sms_text[:500], "SENT" if sms_res.get("success") else "FAILED")
+                    (phone, r.get("role", "CITIZEN"), final_sms_text[:500], "SENT" if sms_res.get("success") else "FAILED", dedup_hash)
                 )
 
     return {
-        "success": True,
+        "success": sent_count > 0 and failed_count == 0,
+        "status": "DISPATCHED" if sent_count and not failed_count else ("PARTIAL_FAILURE" if sent_count else "PROVIDER_ERROR"),
         "state": req.state,
         "area": req.area,
         "risk_level": req.risk_level,
         "probability": req.probability,
         "recipients_targeted": len(target_recipients),
         "sms_delivered": sent_count,
+        "sms_failed": failed_count,
+        "failure_codes": sorted(failure_codes),
         "dispatched_numbers": list(set(dispatched_list)),
         "message": final_sms_text,
         "dispatched_by": "System Admin"

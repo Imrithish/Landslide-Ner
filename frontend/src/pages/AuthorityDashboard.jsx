@@ -123,6 +123,10 @@ const AuthorityDashboard = () => {
         custom_message: customMsg || undefined
       });
 
+      if (!data.success) {
+        throw new Error(`SMS dispatch failed (${data.status || 'PROVIDER_ERROR'}).`);
+      }
+
       setIsModalOpen(false);
       await loadData();
       showInWebsitePopup(
