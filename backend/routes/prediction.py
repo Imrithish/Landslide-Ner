@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from schemas.prediction import LocationRequest, PredictionResponse, MultiHazardForecastResponse
 from services.prediction_service import prediction_service
